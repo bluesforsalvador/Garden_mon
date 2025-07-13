@@ -1,0 +1,13 @@
+# STM32CubeIDE build folders
+/Debug/
+/Release/
+
+# Eclipse project settings
+/.settings/
+/.metadata/
+/*.launch
+
+# Backup & temp files
+*.bak
+*.swp
+*.tmp
