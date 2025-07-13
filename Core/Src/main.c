@@ -20,6 +20,7 @@
 #include "main.h"
 #include "cmsis_os.h"
 #include "adc.h"
+#include "dma.h"
 #include "i2c.h"
 #include "spi.h"
 #include "usart.h"
@@ -67,7 +68,6 @@ void SystemClock_Config(void);
 void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 void AdcTask(void *argument);
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -104,6 +104,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_USART6_UART_Init();
   MX_I2C1_Init();
@@ -116,7 +117,12 @@ int main(void)
 
   /* Init scheduler */
   osKernelInitialize();  /* Call init function for freertos objects (in cmsis_os2.c) */
+  HAL_UART_Transmit(&huart6, (uint8_t*)"Before RTOS Init\r\n", 19, HAL_MAX_DELAY);
   MX_FREERTOS_Init();
+  HAL_UART_Transmit(&huart6, (uint8_t*)"Before RTOS Start\r\n", 20, HAL_MAX_DELAY);
+  osKernelStart();
+  HAL_UART_Transmit(&huart6, (uint8_t*)"This should never print\r\n", 26, HAL_MAX_DELAY);
+
 
   /* Start scheduler */
   osKernelStart();
@@ -207,26 +213,6 @@ void AdcTask(void *argument) {
 
     vTaskDelay(pdMS_TO_TICKS(500));
   }
-}
-
-void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
-    const char *msg1 = "STACK OVERFLOW in task: ";
-    const char *newline = "\r\n";
-
-    HAL_UART_Transmit(&huart6, (uint8_t*)msg1, strlen(msg1), HAL_MAX_DELAY);
-
-    // Print task name
-    if (pcTaskName != NULL) {
-        HAL_UART_Transmit(&huart6, (uint8_t*)pcTaskName, strlen(pcTaskName), HAL_MAX_DELAY);
-    }
-
-    HAL_UART_Transmit(&huart6, (uint8_t*)newline, strlen(newline), HAL_MAX_DELAY);
-
-    // Blink LED to indicate fault
-    while (1) {
-        HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_12);
-        HAL_Delay(100);
-    }
 }
 
 
