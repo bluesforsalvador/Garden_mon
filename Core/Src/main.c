@@ -38,6 +38,8 @@
 #include "task.h"  // This is required to declare TaskHandle_t
 #include "string.h"
 #include "spi.h"
+#include "log_flash.h"
+#include <stdio.h>
 
 /* USER CODE END Includes */
 

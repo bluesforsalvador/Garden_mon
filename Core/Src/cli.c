@@ -11,6 +11,7 @@
 #include "cmsis_os.h"
 #include "st7032.h"
 #include "spi.h"
+#include "log_flash.h"
 
 #define CLI_BUFFER_SIZE 64
 #define MAX_COMMANDS 20
@@ -63,6 +64,8 @@ static void cmd_lcd(int argc, char **argv);
 static void cmd_flash(int argc, char **argv);
 static void cmd_flash_test(int argc, char **argv);
 static void cmd_flash_test_full(int argc, char **argv);
+static void cmd_logtest(int argc, char **argv);
+static void cmd_logindex(int argc, char **argv);
 
 // --- Command Table ---
 static const cli_command_t commands[] = {
@@ -77,6 +80,8 @@ static const cli_command_t commands[] = {
     { "flash", "flash id      - Read JEDEC ID from SPI flash", cmd_flash },
     { "ftest", "ftest         - Stress test flash R/W", cmd_flash_test },
 	{ "ftestfull", "ftestfull     - Full flash write/read/verify", cmd_flash_test_full },
+	{ "logtest", "logtest       - Write test entry to flash", cmd_logtest },
+	{ "logindex", "logindex      - Show current flash log index", cmd_logindex },
 
 };
 
@@ -465,4 +470,73 @@ static void cmd_flash_test_full(int argc, char **argv) {
              FLASH_TOTAL_SIZE, elapsed, errors);
     HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
 }
+
+static void cmd_logtest(int argc, char **argv) {
+    log_entry_t entry;
+    ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+
+    // --- Read M1 (PA0)
+    sConfig.Channel = ADC_CHANNEL_0;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    entry.m1 = HAL_ADC_GetValue(&hadc1);
+
+    // --- Read M2 (PA1)
+    sConfig.Channel = ADC_CHANNEL_1;
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+    entry.m2 = HAL_ADC_GetValue(&hadc1);
+
+    // --- Read ADS1115 channels
+    uint8_t config[] = {0x01, 0xC1, 0x83}; // Start with AIN0
+    uint8_t pointer = 0x00;
+    uint8_t result[2];
+    for (uint8_t ch = 0; ch < 4; ch++) {
+        config[1] = 0xC1 | (ch << 4);  // MUX channel select
+        HAL_I2C_Master_Transmit(&hi2c1, 0x48 << 1, config, 3, 100);
+        HAL_Delay(10);
+        HAL_I2C_Master_Transmit(&hi2c1, 0x48 << 1, &pointer, 1, 100);
+        HAL_I2C_Master_Receive(&hi2c1, 0x48 << 1, result, 2, 100);
+        entry.ads[ch] = (result[0] << 8) | result[1];
+    }
+
+    // --- Timestamp
+    entry.timestamp_ms = xTaskGetTickCount();
+
+    // --- Flash write
+    flash_write_log_entry(&entry);
+    HAL_UART_Transmit(&huart6, (uint8_t*)"Entry written\r\n", 15, HAL_MAX_DELAY);
+
+    // --- Readback
+    log_entry_t check;
+    flash_read_log_entry(flash_log_index - 1, &check);
+
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+        "Readback:\r\n  Time: %lu\r\n  M1: %u  M2: %u\r\n  ADS: %d %d %d %d\r\n",
+        check.timestamp_ms,
+        check.m1,
+        check.m2,
+        check.ads[0], check.ads[1], check.ads[2], check.ads[3]);
+    HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
+    // --- Verify
+    if (memcmp(&entry, &check, sizeof(log_entry_t)) == 0) {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Log entry verified OK\r\n", 24, HAL_MAX_DELAY);
+    } else {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"WARNING: mismatch!\r\n", 21, HAL_MAX_DELAY);
+    }
+}
+
+
+static void cmd_logindex(int argc, char **argv) {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Log index = %lu\r\n", flash_log_index);
+    HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
 
