@@ -12,5 +12,7 @@ void st7032_set_cursor(uint8_t row, uint8_t col);
 void st7032_write_char(char c);
 void st7032_write_str(const char *str);
 void st7032_clear(void);
+void st7032_draw_moisture_bar(uint8_t line, uint8_t percent);
+void st7032_write_data(uint8_t data);
 
 #endif

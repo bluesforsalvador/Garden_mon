@@ -12,6 +12,8 @@
 #include "st7032.h"
 #include "spi.h"
 #include "log_flash.h"
+#include "ads1115.h"
+
 
 #define CLI_BUFFER_SIZE 64
 #define MAX_COMMANDS 20
@@ -66,6 +68,8 @@ static void cmd_flash_test(int argc, char **argv);
 static void cmd_flash_test_full(int argc, char **argv);
 static void cmd_logtest(int argc, char **argv);
 static void cmd_logindex(int argc, char **argv);
+static void cmd_logdump(int argc, char **argv);
+static void cmd_moistcal(int argc, char **argv);
 
 // --- Command Table ---
 static const cli_command_t commands[] = {
@@ -82,6 +86,9 @@ static const cli_command_t commands[] = {
 	{ "ftestfull", "ftestfull     - Full flash write/read/verify", cmd_flash_test_full },
 	{ "logtest", "logtest       - Write test entry to flash", cmd_logtest },
 	{ "logindex", "logindex      - Show current flash log index", cmd_logindex },
+	{ "logdump", "logdump N|all - Dump last N or all log entries", cmd_logdump },
+	{ "moistcal", "moistcal 1|2|both - Calibrate moisture sensor(s)", cmd_moistcal },
+
 
 };
 
@@ -216,6 +223,20 @@ static void cmd_led(int argc, char **argv) {
     } else if (strcmp(argv[1], "off") == 0) {
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
         HAL_UART_Transmit(&huart6, (uint8_t*)"LED OFF\r\n", 9, HAL_MAX_DELAY);
+    }
+}
+
+static void wait_for_enter(void) {
+    // Wait for a single '\r' to appear in the DMA buffer
+    uint16_t last_pos = CLI_DMA_RX_BUFFER_SIZE - __HAL_DMA_GET_COUNTER(huart6.hdmarx);
+    while (1) {
+        uint16_t new_pos = CLI_DMA_RX_BUFFER_SIZE - __HAL_DMA_GET_COUNTER(huart6.hdmarx);
+        while (last_pos != new_pos) {
+            uint8_t ch = dma_rx_buf[last_pos++];
+            if (last_pos >= CLI_DMA_RX_BUFFER_SIZE) last_pos = 0;
+            if (ch == '\r' || ch == '\n') return;  // ENTER detected
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -532,11 +553,113 @@ static void cmd_logtest(int argc, char **argv) {
     }
 }
 
+static void cmd_logdump(int argc, char **argv) {
+    uint32_t count = 0;
+    char msg[128];
+
+    if (argc < 2) {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Usage: logdump <N|all>\r\n", 25, HAL_MAX_DELAY);
+        return;
+    }
+
+    if (strcmp(argv[1], "all") == 0) {
+        count = flash_log_index;
+    } else {
+        count = atoi(argv[1]);
+        if (count == 0 || count > flash_log_index) count = flash_log_index;
+    }
+
+    if (count == 0) {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"No log entries to show\r\n", 25, HAL_MAX_DELAY);
+        return;
+    }
+
+    uint32_t start = flash_log_index - count;
+
+    for (uint32_t i = 0; i < count; i++) {
+        log_entry_t entry;
+        flash_read_log_entry(start + i, &entry);
+
+        snprintf(msg, sizeof(msg),
+            "#%03lu  Time: %lu ms  M1: %u  M2: %u  ADS: %d %d %d %d\r\n",
+            start + i,
+            entry.timestamp_ms,
+            entry.m1, entry.m2,
+            entry.ads[0], entry.ads[1], entry.ads[2], entry.ads[3]);
+
+        HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
+}
 
 static void cmd_logindex(int argc, char **argv) {
     char msg[64];
     snprintf(msg, sizeof(msg), "Log index = %lu\r\n", flash_log_index);
     HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
+static void cmd_moistcal(int argc, char **argv) {
+    char msg[128];
+
+    if (argc < 2) {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Usage: moistcal 1|2|both\r\n", 27, HAL_MAX_DELAY);
+        return;
+    }
+
+    uint8_t calibrate_m1 = 0, calibrate_m2 = 0;
+
+    if (strcmp(argv[1], "1") == 0) calibrate_m1 = 1;
+    else if (strcmp(argv[1], "2") == 0) calibrate_m2 = 1;
+    else if (strcmp(argv[1], "both") == 0) calibrate_m1 = calibrate_m2 = 1;
+    else {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Invalid arg. Use 1, 2, or both\r\n", 32, HAL_MAX_DELAY);
+        return;
+    }
+
+    ADC_ChannelConfTypeDef sConfig = {0};
+    sConfig.Rank = 1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
+
+    if (calibrate_m1) {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Confirm sensor M1 is dry, then press ENTER...\r\n", 47, HAL_MAX_DELAY);
+        wait_for_enter();
+
+        sConfig.Channel = ADC_CHANNEL_0;
+        HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        m1_cal.dry = HAL_ADC_GetValue(&hadc1);
+
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Confirm sensor M1 is wet, then press ENTER...\r\n", 47, HAL_MAX_DELAY);
+        wait_for_enter();
+
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        m1_cal.wet = HAL_ADC_GetValue(&hadc1);
+
+        snprintf(msg, sizeof(msg), "M1 calibration done: Dry=%lu  Wet=%lu\r\n", m1_cal.dry, m1_cal.wet);
+        HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
+
+    if (calibrate_m2) {
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Confirm sensor M2 is dry, then press ENTER...\r\n", 47, HAL_MAX_DELAY);
+        wait_for_enter();
+
+        sConfig.Channel = ADC_CHANNEL_1;
+        HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        m2_cal.dry = HAL_ADC_GetValue(&hadc1);
+
+        HAL_UART_Transmit(&huart6, (uint8_t*)"Confirm sensor M2 is wet, then press ENTER...\r\n", 47, HAL_MAX_DELAY);
+        wait_for_enter();
+
+        HAL_ADC_Start(&hadc1);
+        HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+        m2_cal.wet = HAL_ADC_GetValue(&hadc1);
+
+        snprintf(msg, sizeof(msg), "M2 calibration done: Dry=%lu  Wet=%lu\r\n", m2_cal.dry, m2_cal.wet);
+        HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+    }
 }
 
 

@@ -125,7 +125,6 @@ int main(void)
   osKernelStart();
   HAL_UART_Transmit(&huart6, (uint8_t*)"This should never print\r\n", 26, HAL_MAX_DELAY);
 
-
   /* Start scheduler */
   osKernelStart();
 
