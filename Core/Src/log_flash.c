@@ -3,6 +3,7 @@
 #include <string.h>      // for memcpy or memset if used
 #include "log_flash.h"
 #include "gpio.h"
+#include "moisture.h"
 
 #define FLASH_TOTAL_SIZE  (64 * 1024)  // 64KB flash
 #define FLASH_PAGE_SIZE   256
@@ -16,8 +17,6 @@ static uint32_t log_write_address = 0x0000;
 
 _Static_assert(sizeof(log_entry_t) == 16, "log_entry_t size mismatch!");
 uint32_t flash_log_index = 0;
-calib_t m1_cal = { .dry = 3000, .wet = 1500 };  // Example defaults
-calib_t m2_cal = { .dry = 3000, .wet = 1500 };
 
 static void flash_select(void) {
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);

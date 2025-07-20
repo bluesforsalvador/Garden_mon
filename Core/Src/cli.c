@@ -13,6 +13,7 @@
 #include "spi.h"
 #include "log_flash.h"
 #include "ads1115.h"
+#include "moisture.h"
 
 
 #define CLI_BUFFER_SIZE 64
@@ -70,6 +71,7 @@ static void cmd_logtest(int argc, char **argv);
 static void cmd_logindex(int argc, char **argv);
 static void cmd_logdump(int argc, char **argv);
 static void cmd_moistcal(int argc, char **argv);
+static void cmd_uptime(int argc, char **argv);
 
 // --- Command Table ---
 static const cli_command_t commands[] = {
@@ -88,7 +90,7 @@ static const cli_command_t commands[] = {
 	{ "logindex", "logindex      - Show current flash log index", cmd_logindex },
 	{ "logdump", "logdump N|all - Dump last N or all log entries", cmd_logdump },
 	{ "moistcal", "moistcal 1|2|both - Calibrate moisture sensor(s)", cmd_moistcal },
-
+	{ "uptime", cmd_uptime, "Show system uptime in seconds" },
 
 };
 
@@ -661,5 +663,14 @@ static void cmd_moistcal(int argc, char **argv) {
         HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
     }
 }
+
+static void cmd_uptime(int argc, char **argv) {
+    uint32_t ticks = xTaskGetTickCount();
+    uint32_t seconds = ticks / 1000;  // assuming 1ms tick
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Uptime: %lu seconds\r\n", seconds);
+    HAL_UART_Transmit(&huart6, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+}
+
 
 

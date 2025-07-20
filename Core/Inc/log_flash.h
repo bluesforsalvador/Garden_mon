@@ -13,14 +13,6 @@ typedef struct __attribute__((packed)) {
     int16_t ads[4];
 } log_entry_t;
 
-typedef struct {
-    uint16_t dry;
-    uint16_t wet;
-} calib_t;
-
-extern calib_t m1_cal, m2_cal;
-
-
 void flash_write_log_entry(const log_entry_t *entry);
 void flash_read_log_entry(uint32_t index, log_entry_t *entry);
 extern uint32_t flash_log_index;

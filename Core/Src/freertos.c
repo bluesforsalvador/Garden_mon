@@ -31,6 +31,8 @@
 #include "st7032.h"
 #include "log_flash.h"
 #include "ads1115.h"
+#include "oled.h"
+#include "moisture.h"
 
 /* USER CODE END Includes */
 
@@ -63,6 +65,7 @@ extern void CLI_Task(void *argument);
 extern UART_HandleTypeDef huart6;
 void MoistureDisplayTask(void *argument);  // forward declaration
 void MoistureLogTask(void *argument);  // forward declaration for logging task
+void OledDisplayTask(void *argument);
 
 /* USER CODE END FunctionPrototypes */
 
@@ -115,6 +118,7 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE BEGIN RTOS_THREADS */
   xTaskCreate(MoistureDisplayTask, "Moisture", 256, NULL, 1, NULL);
   xTaskCreate(MoistureLogTask, "LogTask", 512, NULL, 1, NULL);
+  xTaskCreate(OledDisplayTask, "OLED", 256, NULL, 1, NULL);
 
 extern void CLI_Task(void *argument);
 

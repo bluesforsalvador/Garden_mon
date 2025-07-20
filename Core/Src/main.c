@@ -40,6 +40,8 @@
 #include "spi.h"
 #include "log_flash.h"
 #include <stdio.h>
+#include "oled.h"
+
 
 /* USER CODE END Includes */
 
@@ -94,6 +96,10 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);  // Turn on LED (assuming active HIGH)
+  oled_init();
+  oled_test_basic_i2c();
+  oled_test_draw_line();
 
   /* USER CODE END Init */
 
@@ -112,6 +118,7 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_SPI2_Init();
+  oled_init();
   /* USER CODE BEGIN 2 */
   st7032_init(&hi2c1);
   st7032_clear();
